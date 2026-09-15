@@ -127,6 +127,16 @@ hologram:
     interval: 30m
     scan_per_tick_runtime: 2
 
+  # Dedicated debug log — records every hologram removal with reason and location,
+  # so you can trace unexpected disappearances. Independent of the global debug flag.
+  debug_log:
+    enabled: false
+    file: hologram-debug.log
+    # Rotate to keep at most this many MB. 0 = no rotation.
+    max_size_mb: 20
+    # Log scan start/end. Verbose.
+    log_scans: false
+
 near:
   # Maximum number of spawners highlighted per /ss near scan.
   # Prevents client lag on servers with thousands of nearby spawners.

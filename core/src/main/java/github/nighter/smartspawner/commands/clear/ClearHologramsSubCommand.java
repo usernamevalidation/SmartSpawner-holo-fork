@@ -3,12 +3,12 @@ package github.nighter.smartspawner.commands.clear;
 import com.mojang.brigadier.context.CommandContext;
 import github.nighter.smartspawner.SmartSpawner;
 import github.nighter.smartspawner.commands.BaseSubCommand;
+import github.nighter.smartspawner.commands.hologram.HologramDebugLogger;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.TextDisplay;
 import org.jspecify.annotations.NullMarked;
 
@@ -44,15 +44,19 @@ public class ClearHologramsSubCommand extends BaseSubCommand {
 
         int removed = 0;
         int kept = 0;
+        int scanned = 0;
 
         for (World world : Bukkit.getWorlds()) {
             for (TextDisplay display : world.getEntitiesByClass(TextDisplay.class)) {
                 String name = display.getCustomName();
                 if (name == null || !name.startsWith(IDENTIFIER_PREFIX)) continue;
+                scanned++;
 
                 Location loc = parseLocationFromIdentifier(name, world);
                 if (loc == null) {
                     // Malformed name — remove it, it's definitely ours and broken
+                    HologramDebugLogger.logRemoval(display,
+                            HologramDebugLogger.RemovalReason.MALFORMED_IDENTIFIER);
                     display.remove();
                     removed++;
                     continue;
@@ -62,6 +66,8 @@ public class ClearHologramsSubCommand extends BaseSubCommand {
                         && plugin.getSpawnerManager().getSpawnerByLocation(loc) != null;
 
                 if (!spawnerExists) {
+                    HologramDebugLogger.logRemoval(display,
+                            HologramDebugLogger.RemovalReason.ADMIN_CLEAR_HOLOGRAMS);
                     display.remove();
                     removed++;
                 } else {
@@ -69,6 +75,8 @@ public class ClearHologramsSubCommand extends BaseSubCommand {
                 }
             }
         }
+
+        HologramDebugLogger.logScan("admin_clear", scanned, removed);
 
         Map<String, String> ph = Map.of(
                 "removed", String.valueOf(removed),

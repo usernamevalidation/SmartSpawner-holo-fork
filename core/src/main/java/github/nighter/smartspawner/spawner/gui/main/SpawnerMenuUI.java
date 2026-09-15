@@ -4,6 +4,7 @@ import github.nighter.smartspawner.spawner.properties.ItemSignature;
 import net.kyori.adventure.text.Component;
 import github.nighter.smartspawner.SmartSpawner;
 import github.nighter.smartspawner.utils.ItemTooltipUtil;
+import github.nighter.smartspawner.spawner.gui.autosell.AutoSellPreferences;
 import github.nighter.smartspawner.spawner.gui.layout.GuiLayout;
 import github.nighter.smartspawner.spawner.gui.layout.GuiButton;
 import github.nighter.smartspawner.spawner.lootgen.loot.EntityLootConfig;
@@ -585,7 +586,7 @@ public class SpawnerMenuUI {
     }
 
     private ItemStack createAutoSellToggleItem(Player player, GuiButton button) {
-        boolean enabled = github.nighter.smartspawner.spawner.gui.autosell.AutoSellPreferences.isEnabled(player);
+        boolean enabled = github.nighter.smartspawner.spawner.gui.autosell.AutoSellPreferences.isActive(player);
         Material mat = enabled ? Material.LIME_DYE : button.getMaterial();
         ItemStack item = new ItemStack(mat);
         Map<String, String> placeholders = new HashMap<>(2);

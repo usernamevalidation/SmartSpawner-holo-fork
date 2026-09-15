@@ -316,6 +316,7 @@ public class SmartSpawner extends JavaPlugin implements SmartSpawnerPlugin {
         this.rangeChecker = new SpawnerRangeChecker(this);
         this.hologramVisibilityTask = new github.nighter.smartspawner.commands.hologram.HologramVisibilityTask(this);
         this.hologramVisibilityTask.start();
+        github.nighter.smartspawner.commands.hologram.HologramDebugLogger.initialize(this);
         return true;
     }
 
@@ -593,6 +594,7 @@ public class SmartSpawner extends JavaPlugin implements SmartSpawnerPlugin {
             hologramVisibilityTask.stop();
             hologramVisibilityTask.loadConfig();
             hologramVisibilityTask.start();
+            github.nighter.smartspawner.commands.hologram.HologramDebugLogger.loadConfig();
         }
 
         // Reload item spawner settings config

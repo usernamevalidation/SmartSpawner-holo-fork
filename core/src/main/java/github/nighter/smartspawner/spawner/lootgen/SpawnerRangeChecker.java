@@ -89,11 +89,9 @@ public class SpawnerRangeChecker {
         Player target = resolveResponsiblePlayer(spawner);
         if (target == null) return;
 
-        if (!AutoSellPreferences.isEnabled(target)) return;
+        if (!AutoSellPreferences.isActive(target)) return;
 
         if (!CheckOpenMenu.CanPlayerOpenMenu(target, spawner.getSpawnerLocation())) return;
-
-        if (!target.hasPermission("smartspawner.sellall")) return;
 
         boolean debug = plugin.getConfig().getBoolean("debug", false);
         if (debug) {
@@ -127,7 +125,7 @@ public class SpawnerRangeChecker {
         for (Player p : loc.getWorld().getPlayers()) {
             if (!p.isOnline() || !p.isConnected() || p.isDead()) continue;
             if (p.getGameMode() == GameMode.SPECTATOR) continue;
-            if (!p.hasPermission("smartspawner.sellall")) continue;
+            if (!AutoSellPreferences.hasPermission(p)) continue;
 
             Location ploc = p.getLocation();
             if (ploc.getWorld() == null || !ploc.getWorld().equals(loc.getWorld())) continue;

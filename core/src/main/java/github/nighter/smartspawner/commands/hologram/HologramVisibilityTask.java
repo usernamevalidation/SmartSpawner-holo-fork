@@ -222,7 +222,9 @@ public class HologramVisibilityTask {
 
             if (!display.isValid()) continue;
 
-            if (shouldRemove(display)) {
+            HologramDebugLogger.RemovalReason reason = shouldRemove(display);
+            if (reason != null) {
+                HologramDebugLogger.logRemoval(display, reason);
                 display.remove();
                 removed++;
             }
@@ -234,21 +236,27 @@ public class HologramVisibilityTask {
         } else if (finalRemoved > 0) {
             plugin.getLogger().info("[SmartSpawner] Hologram cleanup: removed "
                     + finalRemoved + " orphaned hologram(s).");
+            HologramDebugLogger.logScan("periodic_sweep", 0, finalRemoved);
         }
     }
 
-    private boolean shouldRemove(TextDisplay display) {
+    /**
+     * @return the reason this display should be removed, or {@code null} if it should be kept.
+     */
+    private HologramDebugLogger.RemovalReason shouldRemove(TextDisplay display) {
         String name = display.getCustomName();
-        if (name == null || !name.startsWith(IDENTIFIER_PREFIX)) return false;
+        if (name == null || !name.startsWith(IDENTIFIER_PREFIX)) return null;
 
         Location parsed = parseLocationFromIdentifier(name, display.getWorld());
-        if (parsed == null) return true;
+        if (parsed == null) return HologramDebugLogger.RemovalReason.MALFORMED_IDENTIFIER;
 
         SpawnerData data = spawnerManager.getSpawnerByLocation(parsed);
-        if (data == null) return true;
+        if (data == null) return HologramDebugLogger.RemovalReason.ORPHAN_NO_SPAWNER_DATA;
 
         Material type = parsed.getBlock().getType();
-        return type != Material.SPAWNER;
+        if (type != Material.SPAWNER) return HologramDebugLogger.RemovalReason.ORPHAN_BLOCK_NOT_SPAWNER;
+
+        return null;
     }
 
     /**
