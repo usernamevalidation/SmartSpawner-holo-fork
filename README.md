@@ -161,7 +161,15 @@ Tested on a 10k-hopper oneblock: MSPT stays in single digits, TPS holds at 20.
 
 ### Building
 
-    ./gradlew build
+The build requires the AxSellWands-1.17.2.jar plugin jar. It is not included in this repo
+(see LICENSE terms of the AxSellWands plugin before redistributing).
+
+1. Create a folder `core/libs` if it doesn't already exist.
+2. Place your copy of the AxSellWands plugin jar there.
+3. Rename it to `AxSellWands.jar` (the build references it by that exact name).
+4. Then run:
+
+       ./gradlew build
 
 Jar output: `core/build/libs/`
 
