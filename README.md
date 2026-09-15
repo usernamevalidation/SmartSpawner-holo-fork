@@ -14,9 +14,9 @@
 SmartSpawner is a Minecraft (Paper) plugin that turns vanilla spawners into fully-featured
 smart spawners with virtual storage, EXP, stacking, GUI control, and shop/economy integration.
 
-This fork keeps everything from upstream and adds a set of features aimed at large, dense
-servers: reducing hologram entity overhead, expanding sellwand functionality, and exposing
-spawner data cleanly through the plugin API.
+This fork keeps everything from upstream and adds a set of features aimed at large,
+dense servers: reducing hologram entity overhead, expanding sellwand functionality,
+optimizing hopper throughput, and exposing spawner data cleanly through the plugin API.
 
 ---
 
@@ -122,7 +122,31 @@ See [API.md](API.md) for the full reference.
 The fork ships upstream's defaults unchanged, plus the new keys documented above
 (`hologram.show_radius`, `hologram.max_per_player`, `hologram.visibility_interval`,
 `hologram.cleanup.*`, `hologram.debug_log.*`, `near.max_highlights`,
-`sellwand.multiplier_regex`, `sellwand.uses_regex`).
+`sellwand.multiplier_regex`, `sellwand.uses_regex`, `hopper.max_per_tick`).
+
+### 11. Hopper transfer optimization
+
+Upstream's hopper code scanned the spawner's full virtual inventory on every transfer cycle — with 1M pages of items stored, that's a sort of every entry, per hopper, per cycle. On a 10k-hopper oneblock this drove MSPT past 300 and dropped TPS to 1.
+
+This fork replaces it with a constant-cost fast path:
+
+- **Page-1 sorted cache** — `getDisplayRange(0, 45)` and `getDisplayPage(1, 45)` return a cached first page. Built once per inventory change, not once per hopper.
+- **Unsorted fast cache** — `peekAnyItems(limit)` reads directly from the raw item map without sorting. Cost is O(stack_per_transfer), independent of total inventory depth.
+- **Round-robin scheduling** — `HopperService` processes `hopper.max_per_tick` hoppers per tick instead of dispatching every hopper in one tick. Eliminates the per-tick spike.
+- **GUI update gate** — spawner GUI refreshes only fire when a viewer is present, not on every hopper transfer.
+- **`hopper.max_per_tick`** — new config key, default 50. Throughput = `max_per_tick * 20` hoppers per second. 10k hoppers with the default sweeps in ~10 seconds.
+
+All three caches are invalidated on any inventory mutation (`addItem`, `addItems`, `removeItem`, `removeItems`, `sortItems`, `setMaxSlots`), so stale items can't be pulled.
+
+Implemented in:
+
+- `extras/HopperService.java`
+- `extras/HopperTransfer.java`
+- `extras/HopperConfig.java`
+- `spawner/properties/VirtualInventory.java`
+- `config.yml` under `hopper:`
+
+Tested on a 10k-hopper oneblock: MSPT stays in single digits, TPS holds at 20.
 
 ---
 
