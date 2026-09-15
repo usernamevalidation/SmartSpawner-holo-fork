@@ -1,0 +1,201 @@
+name: SmartSpawner
+version: '${version}'
+main: github.nighter.smartspawner.SmartSpawner
+api-version: '1.21'
+description: "A GUI-based spawner plugin that generates items and experience without spawning mobs"
+authors: [ https://github.com/OpenVdra/SmartSpawner ]
+website: "https://openvdra.github.io/SmartSpawner/"
+folia-supported: true
+
+# Load order - POSTWORLD means after all worlds are loaded
+load: POSTWORLD
+
+# Prefix for logging messages
+prefix: "SmartSpawner"
+
+# Dependencies
+dependencies:
+  server:
+    # Shop Plugins
+    EconomyShopGUI:
+      load: AFTER
+      required: false
+      join-classpath: true
+    EconomyShopGUI-Premium:
+      load: AFTER
+      required: false
+      join-classpath: true
+    ShopGUIPlus:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    zShop:
+      load: BEFORE
+      required: false
+      join-classpath: true
+
+    # Economy Plugins
+    ExcellentEconomy:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Vault:
+      load: BEFORE
+      required: false
+      join-classpath: true
+
+    # Protection/Region Plugins
+    WorldGuard:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    GriefPrevention:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Lands:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Towny:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    SimpleClaimSystem:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    RedProtect:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    minePlots:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Residence:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    FactionsUUID:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    BlockLocker:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    # World Management Plugins
+    Multiverse-Core:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    MultiWorld:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Worlds:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    SuperiorSkyblock2:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    BentoBox:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    IridiumSkyblock:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    PlotSquared:
+      load: BEFORE
+      required: false
+      join-classpath: true
+
+    # RPG/Skill Plugins
+    AuraSkills:
+      load: BEFORE
+      required: false
+      join-classpath: true
+
+    # Drops Plugins
+    MythicMobs:
+      load: BEFORE
+      required: false
+      join-classpath: true
+
+# Permissions
+permissions:
+  # Main command permission
+  smartspawner.command.use:
+    description: "Allow access to SmartSpawner commands"
+    default: op
+
+  # Subcommand permissions
+  smartspawner.command.reload:
+    description: "Permission to reload SmartSpawner plugin"
+    default: op
+
+  smartspawner.command.give:
+    description: "Allow giving spawners to yourself"
+    default: op
+
+  smartspawner.command.list:
+    description: "Allow viewing list of spawners and teleporting to them"
+    default: op
+
+  smartspawner.command.hologram:
+    description: "Allow toggling hologram for spawners"
+    default: op
+
+  smartspawner.command.prices:
+    description: "Allow viewing sell prices of spawner items"
+    default: op
+
+  smartspawner.command.clear:
+    description: "Allow clearing holograms and ghost spawners"
+    default: op
+
+  smartspawner.command.near:
+    description: "Allow highlighting nearby spawners through walls"
+    default: op
+
+  smartspawner.command.set:
+    description: "Allow setting SmartSpawner stack size, range, and delay"
+    default: op
+
+  smartspawner.command.language:
+    description: "Allow changing the active SmartSpawner language"
+    default: op
+
+  smartspawner.command.gui_layout:
+    description: "Allow changing the active SmartSpawner GUI layout"
+    default: op
+
+  smartspawner.command.editloot:
+    description: "Allow editing a spawner's loot table in game"
+    default: op
+
+  # Feature permissions
+  smartspawner.changetype:
+    description: "Allow changing spawner type with spawn egg"
+    default: op
+
+  smartspawner.stack:
+    description: "Allow stacking spawners"
+    default: true
+
+  smartspawner.break:
+    description: "Allow breaking spawners"
+    default: true
+
+  smartspawner.break.bypassdropchance:
+    description: "Bypass spawner drop chance and always receive spawner drops"
+    default: op
+
+  smartspawner.sellall:
+    description: "Allow selling items in spawner storage GUI"
+    default: true

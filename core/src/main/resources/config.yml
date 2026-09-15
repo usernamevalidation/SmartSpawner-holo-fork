@@ -1,0 +1,188 @@
+# SmartSpawner configuration
+# Full guide: https://docs.smartspawner.site/docs/configuration
+# Time format: 20s, 5m, 1h, or 1d_2h_30m_15s. Units: s m h d w mo y.
+# Most settings apply on /ss reload. Ones marked RESTART need a full server restart.
+
+# Language folder under language/. Bundled: en_US, en_US_DonutSMP, en_US_DonutSMP_v2, tr_TR, vi_VN.
+language: en_US
+
+# GUI layout folder under gui_layouts/. Bundled: default, DonutSMP, DonutSMP_v2.
+gui_layout: default
+
+spawner_properties:
+  default:
+    # Mobs generated per cycle, rolled between the two values.
+    min_mobs: 1
+    max_mobs: 4
+
+    # Player distance in blocks that keeps the spawner running.
+    range: 16
+
+    # Time between generation cycles.
+    delay: 25s
+
+    # Storage size. Each page holds 45 slots.
+    max_storage_pages: 1
+    max_stored_exp: 1000
+    max_stack_size: 10000
+
+    # Sneak to stack every held spawner onto one at once. Off stacks one at a time.
+    sneak_stack: true
+
+    # Sneak to place a whole held stack as one spawner. Off places one at a time.
+    sneak_place: true
+
+    # Let players repair held items with the XP stored in a spawner.
+    allow_exp_mending: true
+    protect_from_explosions: true
+
+spawner_break:
+  enabled: true
+
+  # Put broken spawners straight into the inventory instead of dropping them.
+  direct_to_inventory: false
+
+  required_tools:
+    - IRON_PICKAXE
+    - GOLDEN_PICKAXE
+    - DIAMOND_PICKAXE
+    - NETHERITE_PICKAXE
+
+  # Durability taken off the tool per spawner broken.
+  durability_loss: 1
+
+  # Sneak to break up to 64 spawners off a stack at once. Off breaks one at a time.
+  sneak_break: true
+
+  # Sell the storage and claim the XP when the last spawner of a stack is removed.
+  # Needs sell integration and the smartspawner.sellall permission.
+  sell_and_xp_break: true
+
+  silk_touch:
+    required: true
+    level: 1
+
+natural_spawner:
+  # Whether dungeon spawners can be broken and collected.
+  breakable: false
+
+  # Off makes them drop a vanilla spawner instead of a smart one.
+  convert_to_smart_spawner: false
+
+  # Drop chance per type, 0.0 to 100.0. "default" covers every type, entity names override it.
+  # Types left out fall back to 100.0.
+  # drop_chance:
+  #   default: 80.0
+  #   ZOMBIE: 75.0
+
+  # Whether natural spawners still spawn mobs.
+  spawn_mobs: true
+  protect_from_explosions: false
+
+hopper:
+  enabled: false
+  # Time between collection checks.
+  check_delay: 3s
+  # Item stacks moved per collection. Maximum 5.
+  stack_per_transfer: 5
+
+hologram:
+  # Floating text above spawners.
+  enabled: false
+
+  # Offset from the centre of the spawner block.
+  offset_x: 0.5
+  offset_y: 1.6
+  offset_z: 0.5
+
+  # CENTER, LEFT or RIGHT.
+  alignment: CENTER
+  shadowed_text: true
+  # Visible through blocks.
+  see_through: false
+  transparent_background: false
+
+  # Only keep a spawner's hologram entity loaded while a player is within this many blocks.
+  # 0 disables the distance gate (holograms stay loaded — pre-1.8.1 behavior).
+  show_radius: 48
+  
+  # Only load the nearest N spawner holograms per player (within show_radius above).
+  # 0 = unlimited: every spawner within show_radius gets a hologram.
+  max_per_player: 30
+
+  # How often the distance gate is re-evaluated. "1s" is fine.
+  visibility_interval: 1s
+
+  # Orphan cleanup — removes SmartSpawner-Holo-* TextDisplays whose spawner no longer exists
+  # in the database, or whose block is no longer a SPAWNER. Rate-limited so it never stalls
+  # the server.
+  cleanup:
+    # One-shot delayed sweep after startup. Catches spawners deleted while this server was offline.
+    on_startup: true
+    startup_delay_seconds: 10
+    scan_per_tick_startup: 5
+
+    # Recurring slow sweep. Catches live cross-server deletions.
+    enabled: true
+    interval: 30m
+    scan_per_tick_runtime: 2
+
+near:
+  # Maximum number of spawners highlighted per /ss near scan.
+  # Prevents client lag on servers with thousands of nearby spawners.
+  # Players only see the closest ones up to this limit.
+  max_highlights: 100
+
+particle:
+  spawner_stack: true
+  spawner_activate: true
+  spawner_generate_loot: true
+
+database:
+  # RESTART: every setting here except autosave-interval.
+  # Backend: SQLITE or MYSQL. A config still set to YAML switches to SQLITE on startup and imports
+  # spawners_data.yml once.
+  type: SQLITE
+
+  # Prefix for this plugin's tables. Letters, digits and underscore. Existing tables are renamed
+  # automatically if you change it.
+  table-prefix: sspawner_
+
+  # How often unsaved spawner changes are written to the database. Minimum 30s.
+  autosave-interval: 3m
+
+  # SQLite: file name inside the plugin folder.
+  sqlite-file: spawners.db
+
+  # MySQL/MariaDB only. Default port: 3306.
+  host: localhost
+  port: 3306
+  database: smartspawner
+  username: root
+  password: ""
+  pool-size: 10
+
+  # A name unique to this server, used when several servers share one MySQL database.
+  server-name: server1
+
+  # Add a server picker to /ss list showing spawners from every server in the shared database.
+  # MYSQL only.
+  sync-across-servers: false
+
+  # Import spawners_data.yml on startup, and spawners.db as well when switching to MYSQL.
+  # Imported files get a .migrated suffix so they are never read twice.
+  migrate-from-local: true
+
+performance:
+  loot_generation:
+    # true switches very large batches to an average-based calculation, which keeps big stacks
+    # smooth. false always rolls each mob exactly, closest to vanilla but heavier on CPU.
+    approximate_loot: true
+
+    # How long to stay exact before approximating. Lower is cheaper, higher is more precise.
+    # Recommended: 1000-10000.
+    approximation_threshold: 1000
+
+sellwand:
+  multiplier_regex: '(?i)Multiplier:\s*([0-9.]+)x'
+  uses_regex: '(?i)Uses:\s*([0-9]+|∞)'

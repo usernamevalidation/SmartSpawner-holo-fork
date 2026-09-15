@@ -1,0 +1,588 @@
+package github.nighter.smartspawner.spawner.gui.main;
+
+import github.nighter.smartspawner.SmartSpawner;
+import github.nighter.smartspawner.api.events.SpawnerExpClaimEvent;
+import github.nighter.smartspawner.api.gui.GuiLayoutType;
+import github.nighter.smartspawner.config.Config;
+import github.nighter.smartspawner.hooks.rpg.AuraSkillsIntegration;
+import github.nighter.smartspawner.language.LanguageManager;
+import github.nighter.smartspawner.language.MessageService;
+import github.nighter.smartspawner.spawner.gui.autosell.AutoSellPreferences;
+import github.nighter.smartspawner.spawner.gui.layout.GuiLayout;
+import github.nighter.smartspawner.spawner.gui.storage.SpawnerStorageUI;
+import github.nighter.smartspawner.spawner.gui.synchronization.SpawnerGuiViewManager;
+import github.nighter.smartspawner.spawner.properties.SpawnerData;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.ClickType;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.meta.Damageable;
+
+import java.util.*;
+
+public class SpawnerMenuAction implements Listener {
+    private static final Set<Material> SPAWNER_INFO_MATERIALS = Set.of(
+        Material.PLAYER_HEAD,
+        Material.SPAWNER,
+        Material.ZOMBIE_HEAD,
+        Material.SKELETON_SKULL,
+        Material.WITHER_SKELETON_SKULL,
+        Material.CREEPER_HEAD,
+        Material.PIGLIN_HEAD,
+        Material.DRAGON_HEAD
+    );
+    private final SmartSpawner plugin;
+    private final SpawnerMenuUI spawnerMenuUI;
+    private final SpawnerStorageUI spawnerStorageUI;
+    private final SpawnerGuiViewManager spawnerGuiViewManager;
+    private final LanguageManager languageManager;
+    private final MessageService messageService;
+    private AuraSkillsIntegration auraSkills;
+
+    public SpawnerMenuAction(SmartSpawner plugin) {
+        this.plugin = plugin;
+        this.spawnerMenuUI = plugin.getSpawnerMenuUI();
+        this.spawnerStorageUI = plugin.getSpawnerStorageUI();
+        this.spawnerGuiViewManager = plugin.getSpawnerGuiViewManager();
+        this.languageManager = plugin.getLanguageManager();
+        this.messageService = plugin.getMessageService();
+        this.auraSkills = plugin.getIntegrationManager().getAuraSkillsIntegration();
+    }
+
+    public void reload() {
+        this.auraSkills = plugin.getIntegrationManager().getAuraSkillsIntegration();
+    }
+
+    @EventHandler
+    public void onMenuClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+
+        if (!(event.getInventory().getHolder(false) instanceof SpawnerMenuHolder holder)) {
+            return;
+        }
+
+        event.setCancelled(true);
+        SpawnerData spawner = holder.getSpawnerData();
+
+        // Verify click was in the actual menu and not player inventory
+        if (event.getClickedInventory() == null ||
+                !(event.getClickedInventory().getHolder(false) instanceof SpawnerMenuHolder)) {
+            return;
+        }
+
+        ItemStack clickedItem = event.getCurrentItem();
+        if (clickedItem == null || clickedItem.getType() == Material.AIR) {
+            return;
+        }
+
+        // Use layout-based action handling
+        int slot = event.getRawSlot();
+        String clickType = getClickTypeString(event.getClick());
+
+        if (handleLayoutAction(holder.getLayout(), player, spawner, slot, clickType)) {
+            return;
+        }
+
+        // Fallback to legacy material-based handling for backward compatibility
+        Material itemType = clickedItem.getType();
+        if (itemType == Material.CHEST) {
+            if (!plugin.getGuiButtonInteractionService().tryUseAntiSpam(player)) {
+                return;
+            }
+            handleStorageClick(player, spawner);
+        } else if (SPAWNER_INFO_MATERIALS.contains(itemType)) {
+            handleSpawnerInfoClick(player, spawner, event.getClick());
+        } else if (itemType == Material.EXPERIENCE_BOTTLE) {
+            handleExpBottleClick(player, spawner, false);
+        }
+    }
+
+    private boolean handleLayoutAction(GuiLayout layout, Player player, SpawnerData spawner,
+                                       int slot, String clickType) {
+        if (layout == null) {
+            return false;
+        }
+
+        var buttonOpt = layout.getButtonAtSlot(slot);
+        if (buttonOpt.isEmpty()) {
+            return false;
+        }
+
+        var button = buttonOpt.get();
+        String action = button.getActionWithFallback(clickType);
+
+        if (action == null || action.isEmpty()) {
+            // Button exists but no action for this click type
+            // Consume the click to prevent legacy material-based fallback from firing
+            return true;
+        }
+
+        if (action.equals("none")) {
+            return true; // Explicitly disabled action — consume click, do nothing
+        }
+
+        switch (action) {
+            case "open_storage":
+                if (!plugin.getGuiButtonInteractionService().tryUse(player, GuiLayoutType.MAIN_GUI, button)) {
+                    return true;
+                }
+                plugin.getGuiButtonInteractionService().playNavigateSound(
+                        player, button, clickType);
+                handleStorageClick(player, spawner, false);
+                return true;
+            case "sell_and_exp":
+                if (!plugin.getGuiButtonInteractionService().tryUse(player, GuiLayoutType.MAIN_GUI, button)) {
+                    return true;
+                }
+                // Check permissions for selling (same logic as handleSpawnerInfoClick)
+                if (!plugin.hasSellIntegration() || !player.hasPermission("smartspawner.sellall")) {
+                    messageService.sendMessage(player, "no_permission");
+                    plugin.getGuiButtonInteractionService().playFailSound(
+                            player, button, clickType);
+                    return true;
+                }
+                // If no items to sell, still allow exp collection, without leaving the menu
+                if (spawner.getVirtualInventory().getUsedSlots() == 0) {
+                    boolean success;
+                    if (spawner.getSpawnerExp() > 0) {
+                        success = tryCollectExpForPlayer(player, spawner);
+                    } else {
+                        messageService.sendMessage(player, "spawner_storage_empty");
+                        success = false;
+                    }
+                    playActionResult(player, button, clickType, success);
+                    return true;
+                }
+                // Open confirmation GUI with exp collection enabled
+                plugin.getSpawnerSellConfirmUI().openSellConfirmGui(player, spawner,
+                    github.nighter.smartspawner.spawner.gui.sell.SpawnerSellConfirmUI.PreviousGui.MAIN_MENU,
+                        true, button, clickType);
+                return true;
+            case "sell_all":
+                if (!plugin.getGuiButtonInteractionService().tryUse(player, GuiLayoutType.MAIN_GUI, button)) {
+                    return true;
+                }
+                // Check permissions for selling
+                if (!plugin.hasSellIntegration() || !player.hasPermission("smartspawner.sellall")) {
+                    messageService.sendMessage(player, "no_permission");
+                    plugin.getGuiButtonInteractionService().playFailSound(
+                            player, button, clickType);
+                    return true;
+                }
+                // Sell all items only (no XP collection)
+                handleSellAllItems(player, spawner, false, button, clickType);
+                return true;
+            case "collect_exp":
+                if (!plugin.getGuiButtonInteractionService().tryUse(player, GuiLayoutType.MAIN_GUI, button)) {
+                    return true;
+                }
+                playActionResult(
+                        player, button, clickType,
+                        handleExpBottleAcceptedClick(player, spawner, false));
+                return true;
+            case "toggle_auto_sell":
+                if (!plugin.getGuiButtonInteractionService().tryUse(player, GuiLayoutType.MAIN_GUI, button)) {
+                    return true;
+                }
+                if (!plugin.hasSellIntegration() || !player.hasPermission("smartspawner.autosell")) {
+                    messageService.sendMessage(player, "no_permission");
+                    plugin.getGuiButtonInteractionService().playFailSound(player, button, clickType);
+                    return true;
+                }
+                boolean enabled = AutoSellPreferences.toggle(player);
+                messageService.sendMessage(player,
+                        enabled ? "auto_sell_enabled" : "auto_sell_disabled");
+                plugin.getGuiButtonInteractionService().playSuccessSound(player, button, clickType);
+                // Rebuild the main menu so the button material/lore reflects the new state
+                spawnerMenuUI.openSpawnerMenu(player, spawner, true);
+                return true;
+            case "open_sellwand_gui":
+                if (!plugin.getGuiButtonInteractionService().tryUse(player, GuiLayoutType.MAIN_GUI, button)) {
+                    return true;
+                }
+                if (!plugin.hasSellIntegration() || !player.hasPermission("smartspawner.command.sellwandgui")) {
+                    messageService.sendMessage(player, "no_permission");
+                    plugin.getGuiButtonInteractionService().playFailSound(player, button, clickType);
+                    return true;
+                }
+                plugin.getGuiButtonInteractionService().playNavigateSound(player, button, clickType);
+                plugin.getSellwandGUI().open(player);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private String getClickTypeString(ClickType clickType) {
+        return switch (clickType) {
+            case LEFT -> "left_click";
+            case RIGHT -> "right_click";
+            case SHIFT_LEFT -> "shift_left_click";
+            case SHIFT_RIGHT -> "shift_right_click";
+            default -> "left_click";
+        };
+    }
+
+    public void handleStorageClick(Player player, SpawnerData spawner) {
+        handleStorageClick(player, spawner, true);
+    }
+
+    private void handleStorageClick(Player player, SpawnerData spawner, boolean playSound) {
+        Inventory pageInventory = spawnerStorageUI.createStorageInventory(player, spawner, 1, -1);
+        if (playSound) {
+            player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1.0f, 1.0f);
+        }
+        player.openInventory(pageInventory);
+    }
+
+    private void handleSpawnerInfoClick(Player player, SpawnerData spawner, ClickType clickType) {
+        if (!plugin.getGuiButtonInteractionService().tryUseAntiSpam(player)) {
+            return;
+        }
+
+        // With sell integration, left click sells the storage and collects EXP.
+        // Without it, the info button is display-only.
+        boolean hasShopIntegration = plugin.hasSellIntegration() && player.hasPermission("smartspawner.sellall");
+        if (hasShopIntegration && clickType == ClickType.LEFT) {
+            handleExpBottleAcceptedClick(player, spawner, true);
+            handleSellAllItems(player, spawner, true);
+        }
+    }
+
+    private void handleSellAllItems(Player player, SpawnerData spawner, boolean playSound) {
+        handleSellAllItems(player, spawner, playSound, null, "click");
+    }
+
+    private void handleSellAllItems(Player player, SpawnerData spawner, boolean playSound,
+                                    github.nighter.smartspawner.spawner.gui.layout.GuiButton sourceButton,
+                                    String sourceClickType) {
+        if (!plugin.hasSellIntegration()) return;
+
+        // Permission check
+        if (!player.hasPermission("smartspawner.sellall")) {
+            messageService.sendMessage(player, "no_permission");
+            return;
+        }
+
+        // Check if there are items to sell
+        if (spawner.getVirtualInventory().getUsedSlots() == 0) {
+            messageService.sendMessage(player, "spawner_storage_empty");
+            if (sourceButton != null) {
+                plugin.getGuiButtonInteractionService().playFailSound(
+                        player, sourceButton, sourceClickType);
+            }
+            return;
+        }
+
+        // Open confirmation GUI - from main menu, no exp collection
+        if (playSound) {
+            player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
+        }
+        plugin.getSpawnerSellConfirmUI().openSellConfirmGui(player, spawner,
+            github.nighter.smartspawner.spawner.gui.sell.SpawnerSellConfirmUI.PreviousGui.MAIN_MENU,
+                false, sourceButton, sourceClickType);
+    }
+
+    /**
+     * Collects XP from a spawner without navigating the player to any GUI.
+     * Used by the storage GUI so the player stays on the storage page after collecting.
+     * Returns {@code true} if XP was successfully collected.
+     */
+    public void collectExpForPlayer(Player player, SpawnerData spawner) {
+        tryCollectExpForPlayer(player, spawner);
+    }
+
+    public boolean tryCollectExpForPlayer(Player player, SpawnerData spawner) {
+        long exp = spawner.getSpawnerExp();
+        if (exp <= 0) {
+            messageService.sendMessage(player, "no_exp");
+            return false;
+        }
+
+        long initialExp = exp;
+        long expUsedForMending = 0;
+
+        if (Config.get().isAllowExpMending()) {
+            expUsedForMending = applyMendingFromExp(player, exp);
+            exp -= expUsedForMending;
+        }
+
+        if (auraSkills != null) {
+            giveAuraSkillsXp(player, spawner, initialExp);
+        }
+
+        if (exp > 0) {
+            if (SpawnerExpClaimEvent.getHandlerList().getRegisteredListeners().length != 0) {
+                SpawnerExpClaimEvent expClaimEvent = new SpawnerExpClaimEvent(player, spawner.getSpawnerLocation(), exp);
+                Bukkit.getPluginManager().callEvent(expClaimEvent);
+                if (expClaimEvent.isCancelled()) return false;
+                if (exp != expClaimEvent.getExpAmount()) exp = expClaimEvent.getExpAmount();
+            }
+            givePlayerExpInChunks(player, exp);
+        }
+
+        spawner.setSpawnerExp(0);
+        plugin.getSpawnerManager().markSpawnerModified(spawner.getSpawnerId());
+        spawnerGuiViewManager.updateSpawnerMenuViewers(spawner);
+
+        if (spawner.getSpawnerExp() < spawner.getMaxStoredExp()) {
+            if (spawner.getIsAtCapacity()) {
+                spawner.setIsAtCapacity(false);
+            }
+        }
+
+        sendExpCollectionMessage(player, initialExp, expUsedForMending);
+        return true;
+    }
+
+    public void handleExpBottleClick(Player player, SpawnerData spawner, boolean isSell) {
+        if (!plugin.getGuiButtonInteractionService().tryUseAntiSpam(player)) {
+            return;
+        }
+        handleExpBottleAcceptedClick(player, spawner, isSell);
+    }
+
+    public boolean handleExpBottleAcceptedClick(Player player, SpawnerData spawner, boolean isSell) {
+        long exp = spawner.getSpawnerExp();
+
+        if (exp <= 0 && !isSell) {
+            messageService.sendMessage(player, "no_exp");
+            return false;
+        }
+
+        long initialExp = exp;
+        long expUsedForMending = 0;
+
+        // Apply mending first if enabled
+        if (Config.get().isAllowExpMending()) {
+            expUsedForMending = applyMendingFromExp(player, exp);
+            exp -= expUsedForMending;
+        }
+
+        // Give AuraSkills XP if integration is enabled
+        if (auraSkills != null) {
+            giveAuraSkillsXp(player, spawner, initialExp);
+        }
+
+        // Give remaining exp to player
+        if (exp > 0) {
+            if(SpawnerExpClaimEvent.getHandlerList().getRegisteredListeners().length != 0) {
+                SpawnerExpClaimEvent expClaimEvent = new SpawnerExpClaimEvent(player, spawner.getSpawnerLocation(), exp);
+                Bukkit.getPluginManager().callEvent(expClaimEvent);
+                if(expClaimEvent.isCancelled()) return false;
+                if(exp != expClaimEvent.getExpAmount()) exp = expClaimEvent.getExpAmount();
+            }
+            givePlayerExpInChunks(player, exp);
+        }
+
+        // Reset spawner exp and update menu
+        spawner.setSpawnerExp(0);
+        plugin.getSpawnerManager().markSpawnerModified(spawner.getSpawnerId());
+
+        spawnerMenuUI.openSpawnerMenu(player, spawner, true);
+
+        // Update all viewers instead of just current player
+        spawnerGuiViewManager.updateSpawnerMenuViewers(spawner);
+
+        // Update spawner capacity status
+        if (spawner.getSpawnerExp() < spawner.getMaxStoredExp()) {
+            if (spawner.getIsAtCapacity()) {
+                spawner.setIsAtCapacity(false);
+            }
+        }
+
+        // Send appropriate message based on exp distribution
+        sendExpCollectionMessage(player, initialExp, expUsedForMending);
+        return initialExp > 0;
+    }
+
+    private void playActionResult(Player player,
+                                  github.nighter.smartspawner.spawner.gui.layout.GuiButton button,
+                                  String clickType,
+                                  boolean success) {
+        if (success) {
+            plugin.getGuiButtonInteractionService().playSuccessSound(player, button, clickType);
+        } else {
+            plugin.getGuiButtonInteractionService().playFailSound(player, button, clickType);
+        }
+    }
+
+    private long applyMendingFromExp(Player player, long availableExp) {
+        if (availableExp <= 0) {
+            return 0;
+        }
+
+        long expUsed = 0;
+        PlayerInventory inventory = player.getInventory();
+        List<ItemStack> itemsToCheck = Arrays.asList(
+                inventory.getItemInMainHand(),
+                inventory.getItemInOffHand(),
+                inventory.getHelmet(),
+                inventory.getChestplate(),
+                inventory.getLeggings(),
+                inventory.getBoots()
+        );
+
+        for (ItemStack item : itemsToCheck) {
+            if (availableExp <= 0) {
+                break;
+            }
+
+            if (item == null || item.getType() == Material.AIR ||
+                    !item.getEnchantments().containsKey(Enchantment.MENDING)) {
+                continue;
+            }
+
+            if (!(item.getItemMeta() instanceof Damageable damageable) || damageable.getDamage() <= 0) {
+                continue;
+            }
+
+            // Calculate repair amount based on available exp
+            int damage = damageable.getDamage();
+            long durabilityToRepair = Math.min(damage, availableExp * 2);
+            long expNeeded = (durabilityToRepair + 1) / 2; // Round up for partial repairs
+
+            if (expNeeded <= 0) {
+                continue;
+            }
+
+            // Apply repair and track exp usage
+            long actualExpUsed = Math.min(expNeeded, availableExp);
+            long actualRepair = actualExpUsed * 2;
+
+            // Ensure damage value does not go negative
+            int newDamage = (int) Math.max(0L, damage - actualRepair);
+
+            Damageable meta = (Damageable) item.getItemMeta();
+            meta.setDamage(newDamage);
+            item.setItemMeta(meta);
+
+            availableExp -= actualExpUsed;
+            expUsed += actualExpUsed;
+
+            // Visual and sound effects for mending
+            player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 0.5f, 1.0f);
+            player.spawnParticle(Particle.HAPPY_VILLAGER, player.getLocation().add(0, 1, 0), 5);
+        }
+
+        return expUsed;
+    }
+
+    /**
+     * Collects exp from the spawner silently (without sending a message to the player).
+     * Used by the sell_and_exp flow so the caller can send a single combined sell+exp message.
+     *
+     * @return long[] { initialExp, expUsedForMending }, where initialExp == 0 means no exp was collected.
+     */
+    public long[] collectExpSilently(Player player, SpawnerData spawner) {
+        long exp = spawner.getSpawnerExp();
+        if (exp <= 0) {
+            return new long[]{0, 0};
+        }
+
+        long initialExp = exp;
+        long expUsedForMending = 0;
+
+        // Apply mending first if enabled
+        if (Config.get().isAllowExpMending()) {
+            expUsedForMending = applyMendingFromExp(player, exp);
+            exp -= expUsedForMending;
+        }
+
+        // Give AuraSkills XP if integration is enabled
+        if (auraSkills != null) {
+            giveAuraSkillsXp(player, spawner, initialExp);
+        }
+
+        // Give remaining exp to player
+        if (exp > 0) {
+            if (SpawnerExpClaimEvent.getHandlerList().getRegisteredListeners().length != 0) {
+                SpawnerExpClaimEvent expClaimEvent = new SpawnerExpClaimEvent(player, spawner.getSpawnerLocation(), exp);
+                Bukkit.getPluginManager().callEvent(expClaimEvent);
+                if (expClaimEvent.isCancelled()) return new long[]{0, 0};
+                if (exp != expClaimEvent.getExpAmount()) exp = expClaimEvent.getExpAmount();
+            }
+            givePlayerExpInChunks(player, exp);
+        }
+
+        // Reset spawner exp and mark modified
+        spawner.setSpawnerExp(0);
+        plugin.getSpawnerManager().markSpawnerModified(spawner.getSpawnerId());
+
+        // Update all viewers
+        spawnerGuiViewManager.updateSpawnerMenuViewers(spawner);
+
+        // Update spawner capacity status
+        if (spawner.getSpawnerExp() < spawner.getMaxStoredExp()) {
+            if (spawner.getIsAtCapacity()) {
+                spawner.setIsAtCapacity(false);
+            }
+        }
+
+        return new long[]{initialExp, expUsedForMending};
+    }
+
+    private void sendExpCollectionMessage(Player player, long totalExp, long mendingExp) {
+        Map<String, String> placeholders = new HashMap<>();
+
+        if (mendingExp > 0) {
+            long remainingExp = totalExp - mendingExp;
+            placeholders.put("exp_mending", languageManager.formatNumber(mendingExp));
+            placeholders.put("exp", languageManager.formatNumber(remainingExp));
+            messageService.sendMessage(player, "exp_collected_with_mending", placeholders);
+        } else {
+            if (totalExp > 0) {
+                placeholders.put("exp", plugin.getLanguageManager().formatNumber(totalExp));
+                messageService.sendMessage(player, "exp_collected", placeholders);
+            }
+        }
+    }
+
+    private void giveAuraSkillsXp(Player player, SpawnerData spawner, long totalExp) {
+        try {
+            if (auraSkills == null || !auraSkills.isEnabled()) {
+                return;
+            }
+
+            // Get the entity type from the spawner
+            EntityType entityType = spawner.getEntityType();
+            if (entityType == null) {
+                return;
+            }
+
+            // Give skill XP based on the entity type and exp amount
+            auraSkills.giveSkillXp(player, entityType, clampLongToInt(totalExp));
+
+        } catch (Exception e) {
+            plugin.getLogger().warning("Error giving AuraSkills XP: " + e.getMessage());
+        }
+    }
+
+    private void givePlayerExpInChunks(Player player, long totalExp) {
+        long remaining = totalExp;
+        while (remaining > 0) {
+            int grant = clampLongToInt(Math.min(remaining, Integer.MAX_VALUE));
+            player.giveExp(grant);
+            remaining -= grant;
+        }
+    }
+
+    private int clampLongToInt(long value) {
+        if (value <= 0) {
+            return 0;
+        }
+        return (int) Math.min(value, Integer.MAX_VALUE);
+    }
+}

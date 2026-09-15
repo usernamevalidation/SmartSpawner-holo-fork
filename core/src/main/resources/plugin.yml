@@ -1,0 +1,124 @@
+name: SmartSpawner
+version: '${version}'
+main: github.nighter.smartspawner.SmartSpawner
+api-version: '1.21'
+authors: [ https://github.com/OpenVdra/SmartSpawner ]
+folia-supported: true
+
+softdepend:
+  # Shop Plugins
+  - EconomyShopGUI
+  - EconomyShopGUI-Premium
+  - ShopGUIPlus
+  - zShop
+
+  # Utility/Economy Plugins
+  - ExcellentEconomy
+  - Vault
+
+  # Protection/Region Plugins
+  - WorldGuard
+  - GriefPrevention
+  - Lands
+  - Towny
+  - SimpleClaimSystem
+  - RedProtect
+  - minePlots
+  - PlotSquared
+  - Residence
+  - FactionsUUID
+  - BlockLocker
+
+  # World Management Plugins
+  - Multiverse-Core
+  - MultiWorld
+  - Worlds
+  - SuperiorSkyblock2
+  - BentoBox
+  - IridiumSkyblock
+
+  # RPG/Skill Plugins
+  - AuraSkills
+
+  #Drops Plugins
+  - MythicMobs
+
+commands:
+  smartspawner:
+    description: Main command for SmartSpawner plugin
+    usage: /smartspawner [reload|give|list|hologram|prices|clear|near|set|language|gui_layout] [args...]
+    aliases: [ ss, spawner ]
+    permission: smartspawner.command.use
+    permission-message: "You don't have permission to use SmartSpawner commands!"
+
+permissions:
+  # Main command permission
+  smartspawner.command.use:
+    description: Allow access to SmartSpawner commands
+    default: op
+
+  # Subcommand permissions
+  smartspawner.command.reload:
+    description: Permission to reload SmartSpawner plugin
+    default: op
+
+  smartspawner.command.give:
+    description: Allow giving spawners to yourself
+    default: op
+
+  smartspawner.command.list:
+    description: Allow viewing list of spawners and teleporting to them
+    default: op
+
+  smartspawner.command.hologram:
+    description: Allow toggling hologram for spawners
+    default: op
+
+  smartspawner.command.prices:
+    description: Allow viewing sell prices of spawner items
+    default: op
+
+  smartspawner.command.clear:
+    description: Allow clearing holograms and ghost spawners
+    default: op
+
+  smartspawner.command.near:
+    description: Allow highlighting nearby spawners through walls
+    default: op
+
+  smartspawner.command.set:
+    description: Allow setting SmartSpawner stack size, range, and delay
+    default: op
+
+  smartspawner.command.language:
+    description: Allow changing the active SmartSpawner language
+    default: op
+
+  smartspawner.command.gui_layout:
+    description: Allow changing the active SmartSpawner GUI layout
+    default: op
+
+  smartspawner.command.editloot:
+    description: Allow editing a spawner's loot table in game
+    default: op
+
+  # Feature permissions
+  smartspawner.changetype:
+    description: Allow changing spawner type with spawn egg
+    default: op
+
+  smartspawner.stack:
+    description: Allow stacking spawners
+    default: true
+
+  smartspawner.break:
+    description: Allow breaking spawners
+    default: true
+
+  smartspawner.break.bypassdropchance:
+    description: Bypass spawner drop chance and always receive spawner drops
+    default: op
+
+  smartspawner.sellall:
+    description: Allow selling items in spawner storage GUI
+    default: true
