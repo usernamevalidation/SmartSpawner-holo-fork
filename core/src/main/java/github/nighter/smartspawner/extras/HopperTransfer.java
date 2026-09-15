@@ -6,7 +6,6 @@ import github.nighter.smartspawner.spawner.gui.synchronization.SpawnerGuiViewMan
 import github.nighter.smartspawner.spawner.properties.SpawnerData;
 import github.nighter.smartspawner.spawner.properties.VirtualInventory;
 import github.nighter.smartspawner.utils.BlockPos;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -18,10 +17,8 @@ import org.bukkit.inventory.ItemStack;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
-
 
 public class HopperTransfer {
 
@@ -36,12 +33,10 @@ public class HopperTransfer {
     }
 
     public void process(BlockPos hopperPos) {
-
         Location hopperLoc = hopperPos.toLocation();
-        if (hopperLoc == null) return; // This should never happen, world was unloaded but not yet removed from the Tracker
+        if (hopperLoc == null) return;
 
         Block hopperBlock = hopperLoc.getBlock();
-
         if (hopperBlock.getType() != Material.HOPPER) return;
 
         Block spawnerBlock = hopperBlock.getRelative(BlockFace.UP);
@@ -51,7 +46,6 @@ public class HopperTransfer {
     }
 
     private void transferItems(Location hopperLoc, Location spawnerLoc) {
-
         SpawnerData spawner = spawnerManager.getSpawnerByLocation(spawnerLoc);
         if (spawner == null) return;
 
@@ -62,58 +56,54 @@ public class HopperTransfer {
             VirtualInventory virtualInv = spawner.getVirtualInventory();
             if (virtualInv == null) return;
 
+            // Fast path: nothing to move, don't even allocate hopper state
+            if (virtualInv.getUsedSlots() == 0) return;
+
             var state = hopperLoc.getBlock().getState(false);
             if (!(state instanceof Hopper hopper)) return;
 
             Inventory hopperInv = hopper.getInventory();
 
+            int maxToMove = plugin.getHopperConfig().getStackPerTransfer();
+
+            // Fast path: unsorted pull from the raw map (no full sort, no full display build)
+            List<ItemStack> candidates = virtualInv.peekAnyItems(maxToMove);
+            if (candidates.isEmpty()) return;
+
+            List<ItemStack> removed = new ArrayList<>(candidates.size());
             int transferred = 0;
-            int rangeStart = 0;
-            int rangeSize = Math.max(plugin.getHopperConfig().getStackPerTransfer(), 9);
-            List<ItemStack> removed = new ArrayList<>();
 
-            while (transferred < plugin.getHopperConfig().getStackPerTransfer()) {
-                Int2ObjectMap<ItemStack> displayItems = virtualInv.getDisplayRange(rangeStart, rangeSize);
-                if (displayItems.isEmpty()) {
-                    break;
+            for (ItemStack item : candidates) {
+                if (transferred >= maxToMove) break;
+                if (item == null || item.getType() == Material.AIR) continue;
+
+                ItemStack clone = item.clone();
+                int originalAmount = clone.getAmount();
+
+                HashMap<Integer, ItemStack> leftovers = hopperInv.addItem(clone);
+
+                int insertedAmount = originalAmount;
+                if (!leftovers.isEmpty()) {
+                    insertedAmount -= leftovers.values().iterator().next().getAmount();
                 }
 
-                for (ItemStack item : displayItems.values()) {
-                    if (transferred >= plugin.getHopperConfig().getStackPerTransfer()) {
-                        break;
-                    }
-                    if (item == null || item.getType() == Material.AIR) {
-                        continue;
-                    }
-
-                    ItemStack clone = item.clone();
-                    int originalAmount = clone.getAmount();
-
-                    HashMap<Integer, ItemStack> leftovers = hopperInv.addItem(clone);
-
-                    int insertedAmount = originalAmount;
-
-                    if (!leftovers.isEmpty()) {
-                        insertedAmount -= leftovers.values().iterator().next().getAmount();
-                    }
-
-                    if (insertedAmount > 0) {
-                        ItemStack toRemove = item.clone();
-                        toRemove.setAmount(insertedAmount);
-                        removed.add(toRemove);
-                        transferred++;
-                    }
+                if (insertedAmount > 0) {
+                    ItemStack toRemove = item.clone();
+                    toRemove.setAmount(insertedAmount);
+                    removed.add(toRemove);
+                    transferred++;
                 }
-
-                rangeStart += rangeSize;
             }
 
             if (!removed.isEmpty()) {
                 spawner.removeItemsAndUpdateSellValue(removed);
-                guiManager.updateSpawnerMenuViewers(spawner);
+                if (guiManager.hasViewers(spawner)) {
+                    guiManager.updateSpawnerMenuViewers(spawner);
+                }
             }
         } catch (Exception ex) {
-            plugin.getLogger().log(Level.WARNING, "Error transferring items from spawner to hopper at " + hopperLoc, ex);
+            plugin.getLogger().log(Level.WARNING,
+                    "Error transferring items from spawner to hopper at " + hopperLoc, ex);
         } finally {
             lock.unlock();
         }

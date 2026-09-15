@@ -13,14 +13,23 @@ import java.util.concurrent.ConcurrentHashMap;
 public class VirtualInventory {
     private final Map<ItemSignature, Long> consolidatedItems;
     @Getter private int maxSlots;
-    // Cache sorted entries to avoid resorting when display isn't changing
+
+    // Caches. All invalidated on any mutation.
     private List<Map.Entry<ItemSignature, Long>> sortedEntriesCache;
+    private Int2ObjectMap<ItemStack> firstPageSortedCache;
+    private List<ItemStack> firstStacksFastCache;
+
     private Material preferredSortMaterial;
+
+    private static final int FIRST_PAGE_SIZE = 45;
+    private static final int FAST_CACHE_SIZE = 64;
 
     public VirtualInventory(int maxSlots) {
         this.maxSlots = maxSlots;
         this.consolidatedItems = new ConcurrentHashMap<>();
         this.sortedEntriesCache = null;
+        this.firstPageSortedCache = null;
+        this.firstStacksFastCache = null;
         this.preferredSortMaterial = null;
     }
 
@@ -30,6 +39,13 @@ public class VirtualInventory {
 
     public void setMaxSlots(int maxSlots) {
         this.maxSlots = Math.max(0, maxSlots);
+        invalidateCaches();
+    }
+
+    private void invalidateCaches() {
+        sortedEntriesCache = null;
+        firstPageSortedCache = null;
+        firstStacksFastCache = null;
     }
 
     /*
@@ -45,7 +61,7 @@ public class VirtualInventory {
 
         consolidatedItems.merge(signature, amount, Long::sum);
 
-        sortedEntriesCache = null;
+        invalidateCaches();
     }
 
     /*
@@ -71,9 +87,10 @@ public class VirtualInventory {
         }
 
         if (changed) {
-            sortedEntriesCache = null;
+            invalidateCaches();
         }
     }
+
     /**
      * Adds an already-consolidated entry: one item template plus its total count.
      *
@@ -124,7 +141,7 @@ public class VirtualInventory {
             });
         }
 
-        sortedEntriesCache = null;
+        invalidateCaches();
 
         return true;
     }
@@ -136,11 +153,68 @@ public class VirtualInventory {
 
         int safePage = Math.max(1, page);
         int startSlot = (safePage - 1) * pageSize;
+
+        // Page 1 fast path
+        if (startSlot == 0 && pageSize <= FIRST_PAGE_SIZE) {
+            return getFirstPageSorted();
+        }
+
         return buildDisplaySection(startSlot, pageSize);
     }
 
     public Int2ObjectMap<ItemStack> getDisplayRange(int startSlot, int maxResults) {
+        // Page 1 fast path
+        if (startSlot == 0 && maxResults <= FIRST_PAGE_SIZE) {
+            return getFirstPageSorted();
+        }
         return buildDisplaySection(startSlot, maxResults);
+    }
+
+    private Int2ObjectMap<ItemStack> getFirstPageSorted() {
+        if (firstPageSortedCache == null) {
+            firstPageSortedCache = buildDisplaySection(0, FIRST_PAGE_SIZE);
+        }
+        return firstPageSortedCache;
+    }
+
+    /**
+     * Fast path for hoppers and other bulk drains that don't care about sort order.
+     * Returns at most {@code limit} cloned stacks from the raw map. Does not sort.
+     * Cost is O(min(limit, FAST_CACHE_SIZE)) after the first call; the first call
+     * iterates up to FAST_CACHE_SIZE entries of the map.
+     */
+    public List<ItemStack> peekAnyItems(int limit) {
+        if (limit <= 0 || consolidatedItems.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        if (firstStacksFastCache == null) {
+            firstStacksFastCache = buildFastCache();
+        }
+
+        int n = Math.min(limit, firstStacksFastCache.size());
+        List<ItemStack> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            out.add(firstStacksFastCache.get(i).clone());
+        }
+        return out;
+    }
+
+    private List<ItemStack> buildFastCache() {
+        List<ItemStack> result = new ArrayList<>(FAST_CACHE_SIZE);
+        for (Map.Entry<ItemSignature, Long> entry : consolidatedItems.entrySet()) {
+            if (result.size() >= FAST_CACHE_SIZE) break;
+
+            ItemSignature sig = entry.getKey();
+            long total = entry.getValue();
+            int maxStack = sig.getMaxStackSize();
+            if (maxStack <= 0 || total <= 0) continue;
+
+            ItemStack tpl = sig.getTemplate();
+            tpl.setAmount((int) Math.min(total, maxStack));
+            result.add(tpl);
+        }
+        return result;
     }
 
     public Map<ItemSignature, Long> getConsolidatedItems() {
@@ -152,54 +226,39 @@ public class VirtualInventory {
             return 0;
         }
 
-        // Quick estimate - not perfectly accurate but avoids full rebuilds
         int estimatedSlots = 0;
         for (Map.Entry<ItemSignature, Long> entry : consolidatedItems.entrySet()) {
             long amount = entry.getValue();
             int maxStackSize = entry.getKey().getMaxStackSize();
             estimatedSlots += (int) Math.ceil((double) amount / maxStackSize);
             if (estimatedSlots >= maxSlots) {
-                return maxSlots; // Cap at max slots
+                return maxSlots;
             }
         }
         return estimatedSlots;
     }
 
-    /**
-     * Sorts items with the specified material type prioritized first.
-     * This method optimizes by only invalidating caches when necessary.
-     * 
-     * @param preferredMaterial The material to sort first, or null for no preference
-     */
     public void sortItems(org.bukkit.Material preferredMaterial) {
-        // Store the preferred material for future cache rebuilds
         this.preferredSortMaterial = preferredMaterial;
-        
-        // Clear the sorted cache to force re-sorting with new preference
-        this.sortedEntriesCache = null;
-        
-        // Only proceed if we have items to sort
+        invalidateCaches();
+
         if (consolidatedItems.isEmpty()) {
             return;
         }
-        
-        // Generate new sorted entries with preference
+
         if (preferredMaterial != null) {
             this.sortedEntriesCache = consolidatedItems.entrySet().stream()
                 .sorted((e1, e2) -> {
-                    // Use getTemplateRef() to avoid cloning - we only need to read the type
                     boolean e1Preferred = e1.getKey().getMaterial() == preferredMaterial;
                     boolean e2Preferred = e2.getKey().getMaterial() == preferredMaterial;
 
                     if (e1Preferred && !e2Preferred) return -1;
                     if (!e1Preferred && e2Preferred) return 1;
-                    
-                    // Both preferred or both not preferred, sort by material name
+
                     return e1.getKey().getMaterialName().compareTo(e2.getKey().getMaterialName());
                 })
                 .collect(java.util.stream.Collectors.toList());
         } else {
-            // No preference, sort alphabetically by material name
             this.sortedEntriesCache = consolidatedItems.entrySet().stream()
                 .sorted(Comparator.comparing(e -> e.getKey().getMaterialName()))
                 .collect(java.util.stream.Collectors.toList());

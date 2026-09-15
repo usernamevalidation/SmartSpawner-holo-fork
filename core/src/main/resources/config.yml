@@ -81,10 +81,15 @@ natural_spawner:
 
 hopper:
   enabled: false
-  # Time between collection checks.
-  check_delay: 3s
-  # Item stacks moved per collection. Maximum 5.
+  # Item stacks moved per collection cycle (per hopper).
+  # Range 1-5. Higher = more items per hopper per sweep.
   stack_per_transfer: 5
+  # Max hoppers processed per tick. Throughput = max_per_tick * 20 per second.
+  #   50  -> 1000 hoppers/s -> 10k hoppers swept every ~10s
+  #   100 -> 2000 hoppers/s -> 10k hoppers swept every ~5s
+  #   500 -> 10000 hoppers/s -> 10k hoppers swept every ~1s
+  # Cost per hopper is now O(stack_per_transfer), so larger values are cheap.
+  max_per_tick: 50
 
 hologram:
   # Floating text above spawners.
